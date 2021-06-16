@@ -50,7 +50,7 @@ public class Controller implements Initializable {
         try {
             out.writeUTF(messageField.getText());
             messageField.clear();
-            
+            messageField.requestFocus();
         } catch (IOException e) {
             e.printStackTrace();
         }
