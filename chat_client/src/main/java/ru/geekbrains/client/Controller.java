@@ -1,18 +1,17 @@
 package ru.geekbrains.client;
 
-import javafx.application.Application;
-import javafx.event.ActionEvent;
+import javafx.application.Platform;
 import javafx.fxml.FXML;
-import javafx.fxml.Initializable;
 import javafx.scene.control.*;
+import javafx.scene.input.MouseEvent;
 import javafx.scene.layout.HBox;
 
+import javax.swing.*;
+import java.awt.event.ActionEvent;
 import java.io.DataInputStream;
 import java.io.DataOutputStream;
 import java.io.IOException;
 import java.net.Socket;
-import java.net.URL;
-import java.util.ResourceBundle;
 
 public class Controller {
     @FXML
@@ -24,15 +23,25 @@ public class Controller {
     @FXML
     HBox authPanel, msgPanel;
 
+    @FXML
+    ListView<String> clientsListView;
+
+    @FXML
+    TextField userName;
+
     private Socket socket;
     private DataInputStream in;
     private DataOutputStream out;
 
-    public void setAuthorized(boolean authorized){
+    public void setAuthorized(boolean authorized) {
         msgPanel.setVisible(authorized);
         msgPanel.setManaged(authorized);
         authPanel.setVisible(!authorized);
         authPanel.setManaged(!authorized);
+        clientsListView.setVisible(authorized);
+        clientsListView.setManaged(authorized);
+        userName.setVisible(authorized);
+        userName.setManaged(authorized);
     }
 
     public void sendMessage() {
@@ -44,9 +53,12 @@ public class Controller {
             showError("Невозможно отправить сообщение на сервер");
         }
     }
+
     public void sendCloseRequest() {
         try {
+            if (out != null) {
                 out.writeUTF("/exit");
+            }
         } catch (IOException e) {
             e.printStackTrace();
         }
@@ -56,7 +68,8 @@ public class Controller {
         connect();
         try {
             out.writeUTF("/auth " + usernameField.getText());
-            usernameField.clear();
+            userName.appendText(usernameField.getText());
+            //usernameField.clear();
         } catch (IOException e) {
             showError("Невозможно отправить запрос авторизации на сервер");
         }
@@ -70,63 +83,86 @@ public class Controller {
             socket = new Socket("localhost", 8189);
             in = new DataInputStream(socket.getInputStream());
             out = new DataOutputStream(socket.getOutputStream());
-            Thread readThread = new Thread(() -> {
-                try {
-                    while (true) {
-                        String inputMessage = in.readUTF();
-                        if (inputMessage.equals("/authok")) {
-                            setAuthorized(true);
-                            break;
-                        }
-                        chatArea.appendText(inputMessage + "\n");
-                    }
-                    while (true) {
-                        String inputMessage = in.readUTF();
-                        if(inputMessage.startsWith("/")){
-                            if(inputMessage.equals("/exit")){
-                                break;
-                            }
-                            continue;
-                        }
-                        chatArea.appendText(inputMessage + "\n");
-                    }
-                } catch (IOException e) {
-                    e.printStackTrace();
-                }finally {
-                    closeConnection();
-                }
-            });
-            readThread.start();
+            new Thread(() -> logic()).start();
         } catch (IOException e) {
             showError("Невозможно подключиться к серверу");
         }
     }
-    public void closeConnection(){
+
+    private void logic() {
+        try {
+            while (true) {
+                String inputMessage = in.readUTF();
+                if (inputMessage.equals("/exit")) {
+                    closeConnection();
+                }
+                if (inputMessage.equals("/authok")) {
+                    setAuthorized(true);
+                    break;
+                }
+                chatArea.appendText(inputMessage + "\n");
+            }
+            while (true) {
+                String inputMessage = in.readUTF();
+                if (inputMessage.startsWith("/")) {
+                    if (inputMessage.equals("/exit")) {
+                        break;
+                    }
+                    if (inputMessage.startsWith("/clients_list ")) {
+                        Platform.runLater(() -> {
+                            String[] tokens = inputMessage.split("\\s+");
+                            clientsListView.getItems().clear();
+                            for (int i = 1; i < tokens.length; i++) {
+                                clientsListView.getItems().add(tokens[i]);
+                            }
+                        });
+                    }
+                    continue;
+                }
+                chatArea.appendText(inputMessage + "\n");
+            }
+        } catch (IOException e) {
+            e.printStackTrace();
+        } finally {
+            closeConnection();
+        }
+    }
+
+    private void closeConnection() {
         setAuthorized(false);
         try {
-            if(in != null){
+            if (in != null) {
                 in.close();
             }
-        }catch (IOException e){
+        } catch (IOException e) {
             e.printStackTrace();
         }
         try {
-            if(out != null){
+            if (out != null) {
                 out.close();
             }
-        }catch (IOException e){
+        } catch (IOException e) {
             e.printStackTrace();
         }
         try {
-            if(socket != null){
+            if (socket != null) {
                 socket.close();
             }
-        }catch (IOException e){
+        } catch (IOException e) {
             e.printStackTrace();
         }
     }
 
     public void showError(String message) {
         new Alert(Alert.AlertType.ERROR, message, ButtonType.OK).showAndWait();
+    }
+
+    public void clientsListDoubleClick(MouseEvent mouseEvent) {
+        if (mouseEvent.getClickCount() == 2) {
+            String selectedUser = clientsListView.getSelectionModel().getSelectedItem();
+            messageField.setText("/w " + selectedUser + " ");
+            messageField.requestFocus();
+            messageField.selectEnd();
+        }
     }
 }
